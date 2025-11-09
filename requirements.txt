@@ -6,7 +6,4 @@ plotly
 yfinance
 scikit-learn
 xgboost
-transformers==4.41.2
-torch==2.1.0+cpu
-scipy
 requests

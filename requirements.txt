@@ -1,8 +1,9 @@
 streamlit
-yfinance
+streamlit-tradingview-chart
 pandas
 numpy
 plotly
+yfinance
 scikit-learn
 xgboost
 transformers

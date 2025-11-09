@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from transformers import pipeline
 import requests
@@ -20,13 +19,13 @@ start_date = st.sidebar.date_input("Start Date", start_default)
 end_date = st.sidebar.date_input("End Date", today)
 
 timeframes = {
-    "1 Minute": "1m",
-    "5 Minutes": "5m",
-    "15 Minutes": "15m",
-    "1 Hour": "60m",
-    "4 Hours": "240m",
-    "1 Day": "1d",
-    "1 Week": "1wk"
+    "1 Minute": "1",
+    "5 Minutes": "5",
+    "15 Minutes": "15",
+    "1 Hour": "60",
+    "4 Hours": "240",
+    "1 Day": "D",
+    "1 Week": "W"
 }
 tf_label = st.sidebar.selectbox("Select Timeframe", list(timeframes.keys()), index=6)
 interval = timeframes[tf_label]
@@ -35,105 +34,90 @@ st.sidebar.markdown("---")
 st.sidebar.caption("💡 Built by Parth Khandelwal")
 
 # ------------------- TITLE -------------------
-st.title("📈 AI Stock Price Dashboard (TradingView + Sentiment AI)")
-st.markdown(f"📊 **Showing data for {symbol} ({interval})**")
+st.title("📈 AI Stock Price Dashboard (Full TradingView + Sentiment AI)")
+st.markdown(f"📊 **Live data for {symbol} ({tf_label})**")
 
-# ------------------- FETCH DATA -------------------
-try:
-    df = yf.download(symbol, start=start_date, end=end_date, interval=interval)
+# ------------------- FULLY FUNCTIONAL TRADINGVIEW CHART -------------------
+st.subheader("📊 Interactive TradingView Chart")
 
-    if df.empty:
-        st.warning("⚠️ No data found for this symbol or timeframe. Try another combination.")
-    else:
-        df.reset_index(inplace=True)
-        df["MA5"] = df["Close"].rolling(window=5).mean()
-        df["MA20"] = df["Close"].rolling(window=20).mean()
+symbol_tradingview = symbol.replace(".NS", ":NSE")  # better formatting for TradingView
 
-        col1, col2 = st.columns([2, 1])
+st.markdown(
+    f"""
+    <iframe 
+        src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_advanced_chart&symbol={symbol_tradingview}&interval={interval}&theme=dark&style=1&locale=en&toolbarbg=f1f3f6&enable_publishing=false&hide_top_toolbar=false&hide_legend=false&save_image=false&calendar=1&studies=[]&width=100%25&height=750"
+        width="100%" height="750" frameborder="0" allowtransparency="true" scrolling="no">
+    </iframe>
+    """,
+    unsafe_allow_html=True
+)
 
-        # ------------------- PLOTLY CANDLESTICK -------------------
-        with col1:
-            st.subheader(f"{symbol} — {tf_label} Candlestick Chart")
-
-            fig = go.Figure()
-
-            fig.add_trace(go.Candlestick(
-                x=df["Datetime"] if "Datetime" in df.columns else df["Date"],
-                open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
-                name=f"{tf_label} Candles"
-            ))
-
-            fig.add_trace(go.Scatter(
-                x=df["Datetime"] if "Datetime" in df.columns else df["Date"],
-                y=df["MA5"], mode="lines", line=dict(color="cyan", width=1.2), name="MA5"
-            ))
-
-            fig.add_trace(go.Scatter(
-                x=df["Datetime"] if "Datetime" in df.columns else df["Date"],
-                y=df["MA20"], mode="lines", line=dict(color="orange", width=1.2), name="MA20"
-            ))
-
-            fig.update_layout(
-                template="plotly_dark",
-                height=600,
-                xaxis_title="Date / Time",
-                yaxis_title="Price (₹)",
-                yaxis2=dict(title="Volume (M)", overlaying="y", side="right", showgrid=False),
-                showlegend=True
-            )
-
-            st.plotly_chart(fig, use_container_width=True)
-
-        # ------------------- TRADINGVIEW EMBED -------------------
-        with col2:
-            st.subheader("📊 Live TradingView Chart")
-            interval_embed = (
-                interval.replace("m", "") if "m" in interval else
-                interval.replace("wk", "1W") if "wk" in interval else
-                interval
-            )
-
-            st.markdown(
-                f"""
-                <iframe 
-                    src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_abc12&symbol={symbol}&interval={interval_embed}&theme=dark&style=1&locale=en&toolbarbg=f1f3f6&hide_top_toolbar=0&hide_legend=1&save_image=0&calendar=1&studies=[]"
-                    width="100%" height="600" frameborder="0" allowtransparency="true" scrolling="no">
-                </iframe>
-                """,
-                unsafe_allow_html=True
-            )
-
-except Exception as e:
-    st.error(f"❌ Error loading data: {e}")
-
-# ------------------- SENTIMENT ANALYSIS -------------------
+# ------------------- SENTIMENT ANALYSIS SECTION -------------------
 st.markdown("---")
 st.subheader("🧠 AI-Powered Sentiment Analysis")
 
-news_input = st.text_area("📰 Enter latest stock-related news or tweet:", placeholder="Example: Reliance Industries reports record quarterly profits...")
+sentiment_analyzer = pipeline("sentiment-analysis")
 
-if st.button("🔍 Analyze Sentiment"):
-    if news_input.strip() == "":
-        st.warning("⚠️ Please enter some text or news headline first.")
+# 1️⃣ Manual Input
+st.markdown("### ✍️ Analyze Custom News or Tweet")
+news_input = st.text_area("Enter a stock-related headline:", placeholder="Example: Reliance Industries reports record profits...")
+
+if st.button("🔍 Analyze This"):
+    if news_input.strip():
+        result = sentiment_analyzer(news_input)[0]
+        label, score = result['label'], result['score']
+        if label == "POSITIVE":
+            st.success(f"📈 Bullish Sentiment — Confidence: {score*100:.2f}%")
+        elif label == "NEGATIVE":
+            st.error(f"📉 Bearish Sentiment — Confidence: {score*100:.2f}%")
+        else:
+            st.info(f"⚖️ Neutral Sentiment — Confidence: {score*100:.2f}%")
     else:
-        with st.spinner("Analyzing sentiment..."):
-            try:
-                sentiment_analyzer = pipeline("sentiment-analysis")
-                result = sentiment_analyzer(news_input)[0]
+        st.warning("Please enter some text before analyzing.")
 
-                sentiment = result['label']
-                confidence = result['score']
+# 2️⃣ Auto News Sentiment
+st.markdown("### 🗞️ Auto-Fetch Latest Headlines")
+st.caption("Pulling real-time financial news and analyzing sentiment...")
 
-                if sentiment == "POSITIVE":
-                    st.success(f"📈 **Bullish Sentiment** — Confidence: {confidence*100:.2f}%")
-                elif sentiment == "NEGATIVE":
-                    st.error(f"📉 **Bearish Sentiment** — Confidence: {confidence*100:.2f}%")
-                else:
-                    st.info(f"⚖️ **Neutral Sentiment** — Confidence: {confidence*100:.2f}%")
+try:
+    news_api_url = f"https://newsapi.org/v2/everything?q={symbol.split('.')[0]}&language=en&sortBy=publishedAt&pageSize=5&apiKey=YOUR_NEWSAPI_KEY"
+    response = requests.get(news_api_url)
+    news_data = response.json()
 
-            except Exception as e:
-                st.error(f"❌ Error analyzing sentiment: {e}")
+    if "articles" in news_data and len(news_data["articles"]) > 0:
+        articles = news_data["articles"][:5]
+        sentiments = []
+        st.write("#### 📰 Top Recent Headlines:")
+        for article in articles:
+            title = article["title"]
+            result = sentiment_analyzer(title)[0]
+            label = result['label']
+            score = result['score']
+            sentiments.append(score if label == "POSITIVE" else -score)
+
+            if label == "POSITIVE":
+                st.success(f"📈 {title}")
+            elif label == "NEGATIVE":
+                st.error(f"📉 {title}")
+            else:
+                st.info(f"⚖️ {title}")
+
+        avg_sentiment = sum(sentiments) / len(sentiments)
+        st.markdown("---")
+        if avg_sentiment > 0.2:
+            st.success(f"🟢 Overall Market Mood: **Bullish** ({avg_sentiment*100:.1f}%)")
+        elif avg_sentiment < -0.2:
+            st.error(f"🔴 Overall Market Mood: **Bearish** ({avg_sentiment*100:.1f}%)")
+        else:
+            st.info(f"⚪ Neutral Market Mood ({avg_sentiment*100:.1f}%)")
+
+    else:
+        st.warning("⚠️ No recent headlines found for this stock.")
+
+except Exception as e:
+    st.warning("⚠️ Could not fetch live news automatically. Please enter your own headline instead.")
+    st.caption(f"Error: {e}")
 
 # ------------------- FOOTER -------------------
 st.markdown("---")
-st.caption("🚀 Created by Parth Khandelwal • Powered by Streamlit, Yahoo Finance, HuggingFace Transformers & TradingView")
+st.caption("🚀 Created by Parth Khandelwal • Powered by Streamlit, HuggingFace Transformers & TradingView")

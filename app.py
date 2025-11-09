@@ -1,8 +1,8 @@
 # ======================================================
 # 🤖 AI STOCK PREDICTOR (FinBERT + XGBoost + Streamlit)
 # ======================================================
-# Created by Parth Khandelwal
-# Now includes live timeframe selection: 1m, 5m, 15m, 1h, 4h, 1d, 1w
+# Author: Parth Khandelwal
+# Includes: Multi-Timeframe Candlestick Charts, FinBERT Sentiment, XGBoost Prediction
 # ======================================================
 
 import streamlit as st
@@ -49,7 +49,6 @@ st.sidebar.header("⚙️ Settings")
 
 symbol = st.sidebar.text_input("Stock Symbol (e.g. RELIANCE.NS, TCS.NS, INFY.NS)", "RELIANCE.NS")
 
-# Timeframe selector (interval)
 timeframe = st.sidebar.selectbox(
     "Select Timeframe",
     options=["1m", "5m", "15m", "1h", "4h", "1d", "1wk"],
@@ -67,21 +66,37 @@ chart_days = st.sidebar.selectbox(
 )
 
 # ---------------------------------------
-# FETCH DATA FUNCTION
+# FETCH DATA FUNCTION (fixed for all intervals)
 # ---------------------------------------
 @st.cache_data(show_spinner=True)
 def fetch_data(symbol, start, end, interval):
-    data = yf.download(symbol, start=start, end=end, interval=interval, progress=False)
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = [col[0] for col in data.columns]
-    data = data.reset_index()
-    if "Datetime" in data.columns:
-        data.rename(columns={"Datetime": "Date"}, inplace=True)
-    data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
-    data.dropna(subset=["Open", "High", "Low", "Close"], inplace=True)
-    for col in ["Open", "High", "Low", "Close", "Volume"]:
-        data[col] = pd.to_numeric(data[col], errors="coerce")
-    return data
+    try:
+        now = datetime.datetime.now()
+
+        # Auto-adjust based on interval
+        if interval == "1m":
+            start = now - datetime.timedelta(days=7)
+        elif interval in ["5m", "15m", "30m", "1h", "4h"]:
+            start = now - datetime.timedelta(days=60)
+        elif interval == "1d":
+            start = now - datetime.timedelta(days=365 * 3)
+        elif interval == "1wk":
+            start = now - datetime.timedelta(days=365 * 10)
+
+        data = yf.download(symbol, start=start, end=end, interval=interval, progress=False)
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = [col[0] for col in data.columns]
+        data = data.reset_index()
+        if "Datetime" in data.columns:
+            data.rename(columns={"Datetime": "Date"}, inplace=True)
+        data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
+        data.dropna(subset=["Open", "High", "Low", "Close"], inplace=True)
+        for col in ["Open", "High", "Low", "Close", "Volume"]:
+            data[col] = pd.to_numeric(data[col], errors="coerce")
+        return data
+    except Exception as e:
+        st.error(f"⚠️ Data fetch error: {e}")
+        return pd.DataFrame()
 
 # ---------------------------------------
 # MAIN DASHBOARD
@@ -90,15 +105,9 @@ try:
     df = fetch_data(symbol, start_date, end_date, timeframe)
 
     if df.empty:
-        st.error("⚠️ No stock data found. Try a different symbol or timeframe.")
+        st.warning(f"⚠️ No data found for {symbol} at timeframe {timeframe.upper()}. Try a higher timeframe.")
     else:
-        st.subheader(f"📈 {symbol} Stock Data ({timeframe.upper()} candles)")
-        st.dataframe(df.tail())
-
-        # =======================================================
-        # 📊 ADVANCED CANDLESTICK CHART
-        # =======================================================
-        st.subheader("📊 Price Chart")
+        st.subheader(f"📊 {symbol} ({timeframe.upper()}) Price Chart")
 
         df["MA5"] = df["Close"].rolling(5).mean()
         df["MA20"] = df["Close"].rolling(20).mean()
@@ -107,46 +116,45 @@ try:
 
         fig = go.Figure()
 
-        # Candlesticks
+        # Candlestick chart
         fig.add_trace(go.Candlestick(
             x=df_display["Date"],
-            open=df_display["Open"].astype(float),
-            high=df_display["High"].astype(float),
-            low=df_display["Low"].astype(float),
-            close=df_display["Close"].astype(float),
+            open=df_display["Open"],
+            high=df_display["High"],
+            low=df_display["Low"],
+            close=df_display["Close"],
             name=f"{timeframe.upper()} Candles",
             increasing_line_color="limegreen",
             decreasing_line_color="red",
-            increasing_fillcolor="rgba(0,255,0,0.5)",
-            decreasing_fillcolor="rgba(255,0,0,0.5)"
+            increasing_fillcolor="rgba(0,255,0,0.4)",
+            decreasing_fillcolor="rgba(255,0,0,0.4)"
         ))
 
-        # Moving Averages
+        # Moving averages
         fig.add_trace(go.Scatter(
             x=df_display["Date"], y=df_display["MA5"], mode="lines",
-            name="MA5", line=dict(color="cyan", width=1.5)
+            name="MA5", line=dict(color="cyan", width=1.3)
         ))
         fig.add_trace(go.Scatter(
             x=df_display["Date"], y=df_display["MA20"], mode="lines",
-            name="MA20", line=dict(color="orange", width=1.5)
+            name="MA20", line=dict(color="orange", width=1.3)
         ))
 
         # Volume
         fig.add_trace(go.Bar(
-            x=df_display["Date"], y=df_display["Volume"] / 1e6,
+            x=df_display["Date"], y=df_display["Volume"]/1e6,
             name="Volume (M)", marker_color="gray", opacity=0.3, yaxis="y2"
         ))
 
-        # Chart layout
         fig.update_layout(
-            title=f"{symbol} — {timeframe.upper()} Price Trend",
+            title=f"{symbol} — {timeframe.upper()} Trend",
             xaxis_title="Date / Time",
             yaxis_title="Price (INR)",
             template="plotly_dark",
             height=650,
             xaxis_rangeslider_visible=False,
             yaxis2=dict(overlaying="y", side="right", title="Volume (M)", showgrid=False),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
 
         st.plotly_chart(fig, use_container_width=True)

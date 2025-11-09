@@ -97,4 +97,4 @@ except Exception as e:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("🚀 Built with Streamlit + Yahoo Finance + Plotly • Created by Parth Khandelwal")
-Updated app.py (final working version)
+

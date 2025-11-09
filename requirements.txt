@@ -1,9 +1,7 @@
 streamlit==1.38.0
-streamlit-tradingview-chart
 pandas
 numpy
 plotly
 yfinance
-scikit-learn
-xgboost
 requests
+Updated app.py (final working version)

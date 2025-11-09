@@ -4,4 +4,3 @@ numpy
 plotly
 yfinance
 requests
-Updated app.py (final working version)

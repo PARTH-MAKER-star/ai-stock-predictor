@@ -93,3 +93,4 @@ if auto_refresh:
     st.toast("🔁 Auto-refreshing every 1 minute...")
     time.sleep(60)
     st.experimental_rerun()
+Updated app.py (final working version)

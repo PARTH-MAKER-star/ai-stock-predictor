@@ -4,6 +4,7 @@ import yfinance as yf
 from datetime import datetime, timedelta
 from transformers import pipeline
 import requests
+import time
 
 # ------------------- PAGE CONFIG -------------------
 st.set_page_config(page_title="AI Stock Dashboard", layout="wide")
@@ -11,7 +12,7 @@ st.set_page_config(page_title="AI Stock Dashboard", layout="wide")
 # ------------------- SIDEBAR -------------------
 st.sidebar.header("⚙️ Stock Settings")
 
-symbol = st.sidebar.text_input("Enter Stock Symbol (e.g., RELIANCE.NS):", "RELIANCE.NS")
+symbol = st.sidebar.text_input("Enter Stock Symbol (e.g., RELIANCE.NS, AAPL):", "RELIANCE.NS")
 
 today = datetime.today()
 start_default = today - timedelta(days=180)
@@ -30,29 +31,47 @@ timeframes = {
 tf_label = st.sidebar.selectbox("Select Timeframe", list(timeframes.keys()), index=6)
 interval = timeframes[tf_label]
 
+# Auto refresh every 10 minutes
+st.sidebar.markdown("⏱️ Auto-refresh every 10 minutes is enabled")
+st_autorefresh = st.experimental_rerun if "autorefresh" in st.session_state else None
+
 st.sidebar.markdown("---")
 st.sidebar.caption("💡 Built by Parth Khandelwal")
+
+# ------------------- SYMBOL CONVERSION -------------------
+def convert_symbol_for_tradingview(symbol):
+    """Convert Yahoo-style symbols to TradingView format."""
+    if symbol.endswith(".NS"):
+        return f"NSE:{symbol.split('.')[0]}"
+    elif symbol.endswith(".BO"):
+        return f"BSE:{symbol.split('.')[0]}"
+    elif symbol.endswith(".L"):
+        return f"LSE:{symbol.split('.')[0]}"
+    elif symbol.endswith(".T"):
+        return f"TSE:{symbol.split('.')[0]}"
+    else:
+        return f"NASDAQ:{symbol.upper()}"
+
+symbol_tradingview = convert_symbol_for_tradingview(symbol)
 
 # ------------------- TITLE -------------------
 st.title("📈 AI Stock Price Dashboard (Full TradingView + Sentiment AI)")
 st.markdown(f"📊 **Live data for {symbol} ({tf_label})**")
 
-# ------------------- FULLY FUNCTIONAL TRADINGVIEW CHART -------------------
+# ------------------- FULL TRADINGVIEW CHART -------------------
 st.subheader("📊 Interactive TradingView Chart")
-
-symbol_tradingview = symbol.replace(".NS", ":NSE")  # better formatting for TradingView
 
 st.markdown(
     f"""
     <iframe 
-        src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_advanced_chart&symbol={symbol_tradingview}&interval={interval}&theme=dark&style=1&locale=en&toolbarbg=f1f3f6&enable_publishing=false&hide_top_toolbar=false&hide_legend=false&save_image=false&calendar=1&studies=[]&width=100%25&height=750"
+        src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_chart&symbol={symbol_tradingview}&interval={interval}&theme=dark&style=1&locale=en&toolbarbg=f1f3f6&enable_publishing=false&hide_top_toolbar=false&hide_legend=false&save_image=false&calendar=1&studies=[]&width=100%25&height=750"
         width="100%" height="750" frameborder="0" allowtransparency="true" scrolling="no">
     </iframe>
     """,
     unsafe_allow_html=True
 )
 
-# ------------------- SENTIMENT ANALYSIS SECTION -------------------
+# ------------------- SENTIMENT ANALYSIS -------------------
 st.markdown("---")
 st.subheader("🧠 AI-Powered Sentiment Analysis")
 
@@ -80,6 +99,7 @@ st.markdown("### 🗞️ Auto-Fetch Latest Headlines")
 st.caption("Pulling real-time financial news and analyzing sentiment...")
 
 try:
+    # Replace with your own NewsAPI key
     news_api_url = f"https://newsapi.org/v2/everything?q={symbol.split('.')[0]}&language=en&sortBy=publishedAt&pageSize=5&apiKey=YOUR_NEWSAPI_KEY"
     response = requests.get(news_api_url)
     news_data = response.json()
@@ -121,3 +141,18 @@ except Exception as e:
 # ------------------- FOOTER -------------------
 st.markdown("---")
 st.caption("🚀 Created by Parth Khandelwal • Powered by Streamlit, HuggingFace Transformers & TradingView")
+
+# ------------------- AUTO REFRESH -------------------
+# Refresh every 10 minutes automatically
+st.experimental_set_query_params(refresh=int(time.time()))
+st_autorefresh_interval = 600000  # 10 minutes in ms
+st.markdown(
+    f"""
+    <script>
+    setTimeout(function(){{
+        window.location.reload(1);
+    }}, {st_autorefresh_interval});
+    </script>
+    """,
+    unsafe_allow_html=True
+)

@@ -2,11 +2,11 @@ streamlit
 yfinance
 pandas
 numpy
+plotly
 matplotlib
 scikit-learn
 xgboost
 transformers
 torch
 scipy
-plotly
 requests

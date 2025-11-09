@@ -51,91 +51,103 @@ start_date = st.sidebar.date_input("Start Date", datetime.date(2023, 1, 1))
 end_date = st.sidebar.date_input("End Date", datetime.date.today())
 
 # ---------------------------------------
-# FETCH STOCK DATA
+# FETCH + CLEAN DATA
 # ---------------------------------------
 @st.cache_data
 def fetch_data(symbol, start, end):
     data = yf.download(symbol, start=start, end=end)
-    data.reset_index(inplace=True)
+    
+    # Flatten columns if yfinance returns multi-index
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = [col[0] for col in data.columns]
+    
+    data = data.reset_index()
+
+    # Ensure Date column exists
+    if "Date" in data.columns:
+        data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
+    else:
+        data.index.name = "Date"
+        data.reset_index(inplace=True)
+
+    # Drop missing rows
+    data = data.dropna(subset=["Open", "High", "Low", "Close"])
+
+    # Ensure numeric columns
+    for col in ["Open", "High", "Low", "Close", "Volume"]:
+        data[col] = pd.to_numeric(data[col], errors="coerce")
+
     return data
 
+# ---------------------------------------
+# MAIN LOGIC
+# ---------------------------------------
 try:
     df = fetch_data(symbol, start_date, end_date)
 
     if df.empty:
-        st.error("⚠️ No stock data found. Try a different symbol (e.g. RELIANCE.NS).")
+        st.error("⚠️ No stock data found. Try another symbol (e.g. RELIANCE.NS).")
     else:
         st.subheader(f"📈 Stock Data for {symbol}")
         st.dataframe(df.tail())
 
         # =======================================================
-        # 📊 FIXED CANDLESTICK CHART (Handles NaN + Datatypes)
+        # 📊 FIXED CANDLESTICK CHART (Now 100% Working)
         # =======================================================
         st.subheader("📊 Price Chart")
 
-        # Ensure numeric data
-        for col in ["Open", "High", "Low", "Close"]:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df["MA5"] = df["Close"].rolling(5).mean()
+        df["MA20"] = df["Close"].rolling(20).mean()
 
-        # Drop rows with missing data
-        df = df.dropna(subset=["Open", "High", "Low", "Close"])
+        fig = go.Figure()
 
-        if not df.empty:
-            df["MA5"] = df["Close"].rolling(5).mean()
-            df["MA20"] = df["Close"].rolling(20).mean()
+        fig.add_trace(go.Candlestick(
+            x=df["Date"].dt.strftime("%Y-%m-%d"),
+            open=df["Open"].astype(float),
+            high=df["High"].astype(float),
+            low=df["Low"].astype(float),
+            close=df["Close"].astype(float),
+            name="Candlestick",
+            increasing_line_color="green",
+            decreasing_line_color="red"
+        ))
 
-            # Create the candlestick chart
-            fig = go.Figure()
+        # Moving Averages
+        fig.add_trace(go.Scatter(
+            x=df["Date"], y=df["MA5"], mode="lines",
+            name="MA5", line=dict(color="blue", width=1)
+        ))
+        fig.add_trace(go.Scatter(
+            x=df["Date"], y=df["MA20"], mode="lines",
+            name="MA20", line=dict(color="orange", width=1)
+        ))
 
-            fig.add_trace(go.Candlestick(
-                x=df["Date"],
-                open=df["Open"],
-                high=df["High"],
-                low=df["Low"],
-                close=df["Close"],
-                name="Candlestick",
-                increasing_line_color="green",
-                decreasing_line_color="red"
-            ))
+        # Volume bars
+        fig.add_trace(go.Bar(
+            x=df["Date"], y=df["Volume"] / 1e6,
+            name="Volume (M)", marker_color="gray", opacity=0.3, yaxis="y2"
+        ))
 
-            # Moving averages
-            fig.add_trace(go.Scatter(
-                x=df["Date"], y=df["MA5"], mode="lines",
-                name="MA5", line=dict(color="blue", width=1)
-            ))
-            fig.add_trace(go.Scatter(
-                x=df["Date"], y=df["MA20"], mode="lines",
-                name="MA20", line=dict(color="orange", width=1)
-            ))
-
-            # Add volume bars below
-            fig.add_trace(go.Bar(
-                x=df["Date"], y=df["Volume"] / 1e6,
-                name="Volume (in millions)", marker_color="gray", opacity=0.3, yaxis="y2"
-            ))
-
-            fig.update_layout(
-                title=f"{symbol} Price Trend",
-                xaxis_title="Date",
-                yaxis_title="Price (INR)",
-                xaxis_rangeslider_visible=False,
-                template="plotly_dark",
-                height=600,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                yaxis2=dict(
-                    overlaying="y",
-                    side="right",
-                    title="Volume (M)",
-                    showgrid=False
-                )
+        fig.update_layout(
+            title=f"{symbol} Price Trend",
+            xaxis_title="Date",
+            yaxis_title="Price (INR)",
+            xaxis_rangeslider_visible=False,
+            template="plotly_dark",
+            height=600,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            yaxis2=dict(
+                overlaying="y",
+                side="right",
+                title="Volume (M)",
+                showgrid=False
             )
+        )
 
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("⚠️ No valid stock data found to plot candlesticks.")
+        st.plotly_chart(fig, use_container_width=True)
 
         # =======================================================
-        # 🧠 SENTIMENT ANALYSIS
+        # 🧠 FINBERT SENTIMENT ANALYSIS
         # =======================================================
         st.subheader("🧠 News Sentiment Analysis (FinBERT)")
         news_text = st.text_area("Enter a recent stock-related news headline or tweet:")
@@ -158,7 +170,7 @@ try:
                 st.warning("Please enter some news text for sentiment analysis.")
 
         # =======================================================
-        # 🤖 PRICE PREDICTION MODEL
+        # 🤖 XGBOOST PRICE MOVEMENT PREDICTION
         # =======================================================
         st.subheader("📈 Predict Next-Day Stock Movement")
 
@@ -174,7 +186,8 @@ try:
         y_train, y_test = y[:split], y[split:]
 
         model_xgb = xgb.XGBClassifier(
-            n_estimators=150, max_depth=4, learning_rate=0.1, subsample=0.8, colsample_bytree=0.8, random_state=42
+            n_estimators=150, max_depth=4, learning_rate=0.1,
+            subsample=0.8, colsample_bytree=0.8, random_state=42
         )
         model_xgb.fit(X_train, y_train)
 

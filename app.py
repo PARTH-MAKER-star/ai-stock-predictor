@@ -2,11 +2,12 @@
 # 🤖 AI STOCK PREDICTOR (FinBERT + XGBoost + Streamlit)
 # ======================================================
 # Features:
-# ✅ Multi-timeframe charts (1m to 1wk)
+# ✅ Multi-timeframe charts (1m–1wk)
 # ✅ FinBERT sentiment analysis
-# ✅ XGBoost future prediction
-# ✅ Auto-refresh every minute for live data
-# ✅ Dark / Light theme toggle
+# ✅ XGBoost next-day prediction
+# ✅ Auto-refresh every 1 min for live charts
+# ✅ Instant manual refresh for date/timeframe changes
+# ✅ Dark/Light theme toggle
 # ======================================================
 
 import streamlit as st
@@ -27,14 +28,13 @@ import time
 # ---------------------------------------
 st.set_page_config(page_title="AI Stock Predictor", page_icon="📈", layout="wide")
 
-# Custom title
 st.title("🤖 AI Stock Predictor (Live + FinBERT + XGBoost)")
-st.markdown("A **live stock analysis dashboard** combining charts, AI prediction, and FinBERT sentiment.")
+st.markdown("A **live, interactive dashboard** combining technical charts, FinBERT sentiment & XGBoost AI forecasting.")
 
 # ---------------------------------------
 # THEME SWITCH
 # ---------------------------------------
-theme = st.sidebar.radio("🌓 Select Theme", ["Dark", "Light"])
+theme = st.sidebar.radio("🌓 Select Theme", ["Dark", "Light"], horizontal=True)
 plot_theme = "plotly_dark" if theme == "Dark" else "plotly_white"
 
 # ---------------------------------------
@@ -47,8 +47,7 @@ symbol = st.sidebar.text_input("Stock Symbol (e.g. RELIANCE.NS, TCS.NS, INFY.NS)
 timeframe = st.sidebar.selectbox(
     "Select Timeframe",
     options=["1m", "5m", "15m", "1h", "4h", "1d", "1wk"],
-    index=6,
-    format_func=lambda x: f"{x.upper()} Interval"
+    index=6
 )
 
 start_date = st.sidebar.date_input("Start Date", datetime.date(2023, 1, 1))
@@ -60,7 +59,7 @@ chart_days = st.sidebar.selectbox(
     format_func=lambda x: f"Last {x} Days"
 )
 
-auto_refresh = st.sidebar.checkbox("🔁 Auto-Refresh (Every 1 min)", value=(timeframe in ["1m", "5m"]))
+auto_refresh = st.sidebar.checkbox("🔁 Auto-Refresh every 1 minute", value=(timeframe in ["1m", "5m"]))
 
 # ---------------------------------------
 # LOAD FINBERT MODEL
@@ -81,104 +80,97 @@ def get_finbert_sentiment(text):
     return sentiment, scores
 
 # ---------------------------------------
-# FETCH DATA FUNCTION (Fixed for all intervals)
+# FETCH DATA FUNCTION
 # ---------------------------------------
-@st.cache_data(show_spinner=True)
+@st.cache_data(ttl=60, show_spinner=True)
 def fetch_data(symbol, start, end, interval):
     now = datetime.datetime.now()
     if interval == "1m":
         start = now - datetime.timedelta(days=7)
-    elif interval in ["5m", "15m", "30m", "1h", "4h"]:
+    elif interval in ["5m", "15m", "1h", "4h"]:
         start = now - datetime.timedelta(days=60)
     elif interval == "1d":
         start = now - datetime.timedelta(days=365 * 3)
     elif interval == "1wk":
         start = now - datetime.timedelta(days=365 * 10)
 
-    data = yf.download(symbol, start=start, end=end, interval=interval, progress=False)
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = [col[0] for col in data.columns]
-    data = data.reset_index()
-    if "Datetime" in data.columns:
-        data.rename(columns={"Datetime": "Date"}, inplace=True)
-    data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
-    data.dropna(subset=["Open", "High", "Low", "Close"], inplace=True)
+    df = yf.download(symbol, start=start, end=end, interval=interval, progress=False)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0] for col in df.columns]
+    df = df.reset_index()
+    if "Datetime" in df.columns:
+        df.rename(columns={"Datetime": "Date"}, inplace=True)
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df.dropna(subset=["Open", "High", "Low", "Close"], inplace=True)
     for col in ["Open", "High", "Low", "Close", "Volume"]:
-        data[col] = pd.to_numeric(data[col], errors="coerce")
-    return data
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
 
 # ---------------------------------------
-# LIVE REFRESH SECTION
+# DRAW CHART FUNCTION
 # ---------------------------------------
-refresh_placeholder = st.empty()
+def draw_chart(df, symbol, timeframe, plot_theme, chart_days):
+    df["MA5"] = df["Close"].rolling(5).mean()
+    df["MA20"] = df["Close"].rolling(20).mean()
+    df_display = df.tail(chart_days) if len(df) > chart_days else df.copy()
 
-while True:
+    fig = go.Figure()
+
+    fig.add_trace(go.Candlestick(
+        x=df_display["Date"], open=df_display["Open"], high=df_display["High"],
+        low=df_display["Low"], close=df_display["Close"],
+        name=f"{timeframe.upper()} Candles",
+        increasing_line_color="limegreen", decreasing_line_color="red"
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df_display["Date"], y=df_display["MA5"], mode="lines",
+        name="MA5", line=dict(color="cyan", width=1.3)
+    ))
+    fig.add_trace(go.Scatter(
+        x=df_display["Date"], y=df_display["MA20"], mode="lines",
+        name="MA20", line=dict(color="orange", width=1.3)
+    ))
+
+    fig.add_trace(go.Bar(
+        x=df_display["Date"], y=df_display["Volume"]/1e6,
+        name="Volume (M)", marker_color="gray", opacity=0.3, yaxis="y2"
+    ))
+
+    fig.update_layout(
+        template=plot_theme,
+        height=650,
+        title=f"{symbol} ({timeframe.upper()}) Price Trend",
+        xaxis_title="Date / Time",
+        yaxis_title="Price (INR)",
+        yaxis2=dict(overlaying="y", side="right", title="Volume (M)", showgrid=False),
+        xaxis_rangeslider_visible=False,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    return fig
+
+# ---------------------------------------
+# MAIN DASHBOARD LOGIC
+# ---------------------------------------
+try:
     df = fetch_data(symbol, start_date, end_date, timeframe)
-    refresh_placeholder.empty()
 
     if df.empty:
-        st.warning(f"⚠️ No data for {symbol} at {timeframe.upper()}. Try higher timeframe.")
+        st.warning(f"⚠️ No data found for {symbol} ({timeframe.upper()}). Try a higher timeframe.")
     else:
-        df["MA5"] = df["Close"].rolling(5).mean()
-        df["MA20"] = df["Close"].rolling(20).mean()
-
-        df_display = df.tail(chart_days) if len(df) > chart_days else df.copy()
-
-        fig = go.Figure()
-
-        # Candlesticks
-        fig.add_trace(go.Candlestick(
-            x=df_display["Date"],
-            open=df_display["Open"],
-            high=df_display["High"],
-            low=df_display["Low"],
-            close=df_display["Close"],
-            name=f"{timeframe.upper()} Candles",
-            increasing_line_color="limegreen",
-            decreasing_line_color="red"
-        ))
-
-        # Moving averages
-        fig.add_trace(go.Scatter(
-            x=df_display["Date"], y=df_display["MA5"],
-            mode="lines", name="MA5", line=dict(color="cyan", width=1.3)
-        ))
-        fig.add_trace(go.Scatter(
-            x=df_display["Date"], y=df_display["MA20"],
-            mode="lines", name="MA20", line=dict(color="orange", width=1.3)
-        ))
-
-        # Volume
-        fig.add_trace(go.Bar(
-            x=df_display["Date"], y=df_display["Volume"] / 1e6,
-            name="Volume (M)", marker_color="gray", opacity=0.3, yaxis="y2"
-        ))
-
-        fig.update_layout(
-            title=f"{symbol} — {timeframe.upper()} Trend",
-            xaxis_title="Date / Time",
-            yaxis_title="Price (INR)",
-            template=plot_theme,
-            height=650,
-            xaxis_rangeslider_visible=False,
-            yaxis2=dict(overlaying="y", side="right", title="Volume (M)", showgrid=False),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
-
+        fig = draw_chart(df, symbol, timeframe, plot_theme, chart_days)
         st.plotly_chart(fig, use_container_width=True)
 
-    # ---------------------------------------
-    # BREAK LOOP IF AUTO-REFRESH IS OFF
-    # ---------------------------------------
-    if not auto_refresh:
-        break
+    if auto_refresh:
+        st.toast("🔄 Auto-refresh enabled (updates every 60 seconds)")
+        time.sleep(60)
+        st.experimental_rerun()
 
-    st.info("🔄 Auto-refreshing in 60 seconds...")
-    time.sleep(60)
-    st.experimental_rerun()
+except Exception as e:
+    st.error(f"An error occurred: {e}")
 
 # ---------------------------------------
-# 🧠 FINBERT SENTIMENT ANALYSIS
+# 🧠 FINBERT SENTIMENT
 # ---------------------------------------
 st.subheader("🧠 News Sentiment Analysis")
 news_text = st.text_area("Enter stock-related news or tweet:")
@@ -200,7 +192,7 @@ if st.button("Analyze Sentiment"):
         st.warning("Please enter text to analyze.")
 
 # ---------------------------------------
-# 🤖 XGBOOST PRICE PREDICTION
+# 🤖 XGBOOST PREDICTION
 # ---------------------------------------
 st.subheader("📈 Predict Next-Day Movement (Daily Model)")
 daily_data = fetch_data(symbol, start_date, end_date, "1d")

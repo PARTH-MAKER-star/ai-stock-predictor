@@ -63,8 +63,8 @@ st.subheader("📊 Interactive TradingView Chart")
 
 st.markdown(
     f"""
-    <iframe 
-        src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_chart&symbol={symbol_tradingview}&interval={interval}&theme=dark&style=1&locale=en&toolbarbg=f1f3f6&enable_publishing=false&hide_top_toolbar=false&hide_legend=false&save_image=false&calendar=1&studies=[]&width=100%25&height=750"
+    <iframe
+        src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_chart&symbol={symbol_tradingview}&interval={interval}&theme=dark&style=1&locale=en&toolbarbg=f1f3f6&enable_publishing=false&hide_top_toolbar=false&hide_legend=false&save_image=false&calendar=1&allow_symbol_change=true&width=100%25&height=750"
         width="100%" height="750" frameborder="0" allowtransparency="true" scrolling="no">
     </iframe>
     """,

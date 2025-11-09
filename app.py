@@ -69,44 +69,73 @@ try:
         st.dataframe(df.tail())
 
         # =======================================================
-        # CANDLESTICK CHART
+        # 📊 FIXED CANDLESTICK CHART (Handles NaN + Datatypes)
         # =======================================================
         st.subheader("📊 Price Chart")
 
-        df["MA5"] = df["Close"].rolling(5).mean()
-        df["MA20"] = df["Close"].rolling(20).mean()
+        # Ensure numeric data
+        for col in ["Open", "High", "Low", "Close"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        fig = go.Figure()
+        # Drop rows with missing data
+        df = df.dropna(subset=["Open", "High", "Low", "Close"])
 
-        fig.add_trace(go.Candlestick(
-            x=df["Date"],
-            open=df["Open"],
-            high=df["High"],
-            low=df["Low"],
-            close=df["Close"],
-            name="Candlestick"
-        ))
+        if not df.empty:
+            df["MA5"] = df["Close"].rolling(5).mean()
+            df["MA20"] = df["Close"].rolling(20).mean()
 
-        fig.add_trace(go.Scatter(
-            x=df["Date"], y=df["MA5"], mode="lines", name="MA5", line=dict(color="blue", width=1)
-        ))
-        fig.add_trace(go.Scatter(
-            x=df["Date"], y=df["MA20"], mode="lines", name="MA20", line=dict(color="orange", width=1)
-        ))
+            # Create the candlestick chart
+            fig = go.Figure()
 
-        fig.update_layout(
-            title=f"{symbol} Price Trend",
-            xaxis_title="Date",
-            yaxis_title="Price (INR)",
-            xaxis_rangeslider_visible=False,
-            template="plotly_white",
-            height=500
-        )
+            fig.add_trace(go.Candlestick(
+                x=df["Date"],
+                open=df["Open"],
+                high=df["High"],
+                low=df["Low"],
+                close=df["Close"],
+                name="Candlestick",
+                increasing_line_color="green",
+                decreasing_line_color="red"
+            ))
 
-        st.plotly_chart(fig, use_container_width=True)
+            # Moving averages
+            fig.add_trace(go.Scatter(
+                x=df["Date"], y=df["MA5"], mode="lines",
+                name="MA5", line=dict(color="blue", width=1)
+            ))
+            fig.add_trace(go.Scatter(
+                x=df["Date"], y=df["MA20"], mode="lines",
+                name="MA20", line=dict(color="orange", width=1)
+            ))
+
+            # Add volume bars below
+            fig.add_trace(go.Bar(
+                x=df["Date"], y=df["Volume"] / 1e6,
+                name="Volume (in millions)", marker_color="gray", opacity=0.3, yaxis="y2"
+            ))
+
+            fig.update_layout(
+                title=f"{symbol} Price Trend",
+                xaxis_title="Date",
+                yaxis_title="Price (INR)",
+                xaxis_rangeslider_visible=False,
+                template="plotly_dark",
+                height=600,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                yaxis2=dict(
+                    overlaying="y",
+                    side="right",
+                    title="Volume (M)",
+                    showgrid=False
+                )
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("⚠️ No valid stock data found to plot candlesticks.")
 
         # =======================================================
-        # SENTIMENT ANALYSIS
+        # 🧠 SENTIMENT ANALYSIS
         # =======================================================
         st.subheader("🧠 News Sentiment Analysis (FinBERT)")
         news_text = st.text_area("Enter a recent stock-related news headline or tweet:")
@@ -123,12 +152,13 @@ try:
                 fig_sent = px.bar(sentiment_df, x="Sentiment", y="Score", color="Sentiment",
                                   title="FinBERT Sentiment Scores", text="Score")
                 fig_sent.update_traces(texttemplate='%{text:.2f}', textposition='outside')
+                fig_sent.update_layout(template="plotly_dark", height=400)
                 st.plotly_chart(fig_sent, use_container_width=True)
             else:
                 st.warning("Please enter some news text for sentiment analysis.")
 
         # =======================================================
-        # PRICE PREDICTION MODEL
+        # 🤖 PRICE PREDICTION MODEL
         # =======================================================
         st.subheader("📈 Predict Next-Day Stock Movement")
 

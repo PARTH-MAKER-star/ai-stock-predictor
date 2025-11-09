@@ -8,6 +8,7 @@
 # ✅ Auto-refresh every 1 min for live charts
 # ✅ Instant manual refresh for date/timeframe changes
 # ✅ Dark/Light theme toggle
+# ✅ Strict date filtering
 # ======================================================
 
 import streamlit as st
@@ -80,11 +81,13 @@ def get_finbert_sentiment(text):
     return sentiment, scores
 
 # ---------------------------------------
-# FETCH DATA FUNCTION
+# FETCH DATA FUNCTION (with strict date filtering)
 # ---------------------------------------
 @st.cache_data(ttl=60, show_spinner=True)
 def fetch_data(symbol, start, end, interval):
     now = datetime.datetime.now()
+
+    # Adjust automatic start window for yfinance
     if interval == "1m":
         start = now - datetime.timedelta(days=7)
     elif interval in ["5m", "15m", "1h", "4h"]:
@@ -95,15 +98,23 @@ def fetch_data(symbol, start, end, interval):
         start = now - datetime.timedelta(days=365 * 10)
 
     df = yf.download(symbol, start=start, end=end, interval=interval, progress=False)
+
+    # Clean multi-index columns
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [col[0] for col in df.columns]
     df = df.reset_index()
     if "Datetime" in df.columns:
         df.rename(columns={"Datetime": "Date"}, inplace=True)
+
+    # Clean and filter
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     df.dropna(subset=["Open", "High", "Low", "Close"], inplace=True)
     for col in ["Open", "High", "Low", "Close", "Volume"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # ✅ Strictly filter to user-selected date range
+    df = df[(df["Date"].dt.date >= start_date) & (df["Date"].dt.date <= end_date)]
+
     return df
 
 # ---------------------------------------
